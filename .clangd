@@ -7,6 +7,7 @@ Diagnostics:
     - "-Wcxx20_deducing_this"
     - "-Wundefined_internal_type"
     - "-Wincomplete_member_access"
+    - "-Wsizeof_alignof_incomplete_or_sizeless_type"
 CompileFlags:
   Add:
     - "-ferror-limit=0"

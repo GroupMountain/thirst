@@ -57,13 +57,21 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/server/commands/CommandVersion.h"
 #include "mc/server/commands/MinecraftCommands.h"
 #include "mc/server/commands/PlayerCommandOrigin.h"
+#include "mc/util/ExpressionNode.h"
 #include "mc/util/MolangScriptArg.h"
 #include "mc/util/MolangVariable.h"
 #include "mc/util/MolangVariableMap.h"
 #include "mc/world/Minecraft.h"
+#include "mc/world/actor/RenderParams.h"
+#include "mc/world/events/ServerInstanceEventCoordinator.h"
 #include "mc/world/level/BlockSource.h" // IWYU pragma: keep
 #include "mc/world/level/Level.h"
+#include "mc/world/level/biome/Biome.h"
+#include "mc/world/level/biome/registry/BiomeRegistry.h"
+#include "mc/world/level/biome/source/BiomeSource.h"
 #include "mc/world/level/block/Block.h"
+#include "mc/world/level/dimension/Dimension.h"
+#include "mc/world/level/levelgen/WorldGenerator.h"
 #include "mc/world/phys/HitResult.h" // IWYU pragma: keep
 
 
@@ -82,6 +90,32 @@ int                                                       thirst_base;
 int                                                       thirst_max;
 int                                                       thirst_min;
 int                                                       thirst_tick;
+
+
+void init_molang() {
+    ExpressionNode::registerQueryFunction(
+        "query.is_biome",
+        [&](RenderParams& params, const std::vector<ExpressionNode>& args) -> MolangScriptArg const& {
+            auto biome = params.mActor->getDimension().getWorldGenerator()->getBiomeSource().getBiome(
+                params.mActor->getPosition()
+            );
+            static const MolangScriptArg return_true(true), return_false(false);
+            for (const auto& arg : args) {
+                const auto& tag = arg.evalGeneric(params);
+                if (biome->mHash->getHash() == tag.mPOD.mHashType64) {
+                    return return_true;
+                }
+            }
+            return return_false;
+        },
+        "",
+        MolangQueryFunctionReturnType::Number,
+        "default",
+        0,
+        ~0ull,
+        {}
+    );
+}
 
 bool exec_molang(Player* player, const std::string& script) {
     player->getMolangVariables().setMolangVariable(
@@ -159,6 +193,17 @@ void show_text(Player* player) {
     packet.mStayTime    = INT_MAX;
     player->sendNetworkPacket(packet);
 }
+LL_AUTO_TYPE_INSTANCE_HOOK(
+    ServerStartHook,
+    HookPriority::Normal,
+    ServerInstanceEventCoordinator,
+    &ServerInstanceEventCoordinator::sendServerThreadStarted,
+    void,
+    ::ServerInstance& ins
+) {
+    init_molang();
+    return origin(ins);
+}
 void init() {
     data();
     load_config();
@@ -171,6 +216,10 @@ void init() {
             while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(player)) {
                 co_await ll::chrono::ticks(thirst_tick);
                 if (!current_thirsts.contains(player)) continue;
+                if (!static_cast<Player*>(player)->isAlive()
+                    || static_cast<Player*>(player)->getPlayerGameType() == GameType::Creative
+                    || static_cast<Player*>(player)->getPlayerGameType() == GameType::Spectator)
+                    continue;
                 for (const auto& [molang, cmds] : commands) {
                     if (exec_molang(static_cast<Player*>(player), molang))
                         for (const auto& cmd : cmds) {
@@ -183,7 +232,6 @@ void init() {
                         }
                 }
                 show_text(static_cast<Player*>(player));
-                if (auto& val = current_thirsts[player]; val > thirst_min) val--;
                 if (current_thirsts[player] > thirst_max) current_thirsts[player] = thirst_max;
                 if (current_thirsts[player] < thirst_min) current_thirsts[player] = thirst_min;
             }
