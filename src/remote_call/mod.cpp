@@ -38,4 +38,5 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 void export_api() {
     RemoteCall::exportAs("thirst", "getThirst", get_thirst);
     RemoteCall::exportAs("thirst", "setThirst", set_thirst);
+    RemoteCall::exportAs("thirst", "setShowThirst", set_show_thirst);
 }

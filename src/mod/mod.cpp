@@ -86,6 +86,7 @@ std::unordered_map<mce::UUID, int>                        current_thirsts;
 std::unordered_map<std::string, Modification>             modifications;
 std::unordered_map<std::string, std::vector<std::string>> commands;
 std::unordered_map<int, std::string>                      texts;
+std::unordered_map<mce::UUID, bool>                       show_thirsts;
 int                                                       thirst_base;
 int                                                       thirst_max;
 int                                                       thirst_min;
@@ -186,12 +187,23 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     origin(instance);
 }
 void show_text(Player* player) {
-    auto           val = current_thirsts[player->getUuid()];
-    SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, texts[val], std::nullopt};
-    packet.mFadeInTime  = 0;
-    packet.mFadeOutTime = INT_MAX;
-    packet.mStayTime    = INT_MAX;
-    player->sendNetworkPacket(packet);
+    if (!show_thirsts.contains(player->getUuid())) {
+        show_thirsts[player->getUuid()] = true;
+    }
+    if (!show_thirsts[player->getUuid()]) {
+        SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, "", std::nullopt};
+        packet.mFadeInTime  = 0;
+        packet.mFadeOutTime = 1;
+        packet.mStayTime    = 1;
+        player->sendNetworkPacket(packet);
+    } else {
+        auto           val = current_thirsts[player->getUuid()];
+        SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, texts[val], std::nullopt};
+        packet.mFadeInTime  = 0;
+        packet.mFadeOutTime = INT_MAX;
+        packet.mStayTime    = INT_MAX;
+        player->sendNetworkPacket(packet);
+    }
 }
 LL_AUTO_TYPE_INSTANCE_HOOK(
     ServerStartHook,
@@ -352,4 +364,7 @@ __declspec(dllexport) int get_thirst(const std::string& uuid) {
 __declspec(dllexport) void set_thirst(const std::string& uuid, int value) {
     if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) current_thirsts[key] = value;
     else data()[uuid] = value;
+}
+__declspec(dllexport) void set_show_thirst(const std::string& uuid, bool value) {
+    show_thirsts[mce::UUID::fromString(uuid)] = value;
 }

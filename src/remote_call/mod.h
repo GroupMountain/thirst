@@ -3,7 +3,7 @@
 #include "ll/api/mod/NativeMod.h"
 __declspec(dllimport) int  get_thirst(const std::string& uuid);
 __declspec(dllimport) void set_thirst(const std::string& uuid, int value);
-
+__declspec(dllimport) void set_show_thirst(const std::string& uuid, bool value);
 namespace mod {
 
 class Mod {
