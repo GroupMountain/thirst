@@ -48,6 +48,6 @@ function reduceThirst(uuid, value) {
  * @param {Boolean} value
  * @returns {number}
  */
-function setThirst(uuid, value) {
+function setShowThirst(uuid, value) {
   return thirst_api.setShowThirst(uuid, value);
 }
