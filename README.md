@@ -15,6 +15,7 @@
   },
   "commands": {
     //键为molang
+    //当表达式结果不为0时执行命令
     "v.r=(v.current_thirst==10);v.r?(v.current_thirst=20);return v.r;": [
       "kill @s" //可运行命令
     ],
