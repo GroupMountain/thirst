@@ -1,6 +1,11 @@
 {
-    "name": "${modName}",
-    "entry": "${modFile}",
-    "version": "${modVersion}",
-    "type": "native"
+  "name": "${modName}",
+  "entry": "${modFile}",
+  "version": "${modVersion}",
+  "type": "native",
+  "dependencies": [
+    {
+      "name": "thirst"
+    }
+  ]
 }

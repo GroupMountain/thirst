@@ -82,7 +82,7 @@ struct Modification {
     int                      value;
     std::vector<std::string> commands;
 };
-std::unordered_map<void*, int>                            current_thirsts;
+std::unordered_map<mce::UUID, int>                        current_thirsts;
 std::unordered_map<std::string, Modification>             modifications;
 std::unordered_map<std::string, std::vector<std::string>> commands;
 std::unordered_map<int, std::string>                      texts;
@@ -120,12 +120,12 @@ void init_molang() {
 bool exec_molang(Player* player, const std::string& script) {
     player->getMolangVariables().setMolangVariable(
         "variable.current_thirst",
-        static_cast<float>(current_thirsts[player])
+        static_cast<float>(current_thirsts[player->getUuid()])
     );
 
     auto res = player->evalMolang(script) != 0.0;
 
-    current_thirsts[player] = static_cast<int>(
+    current_thirsts[player->getUuid()] = static_cast<int>(
         player->getMolangVariables()
             .getMolangVariable(HashedString{"variable.current_thirst"}.getHash(), "variable.current_thirst")
             .mPOD.mFloat
@@ -186,7 +186,7 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     origin(instance);
 }
 void show_text(Player* player) {
-    auto           val = current_thirsts[player];
+    auto           val = current_thirsts[player->getUuid()];
     SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, texts[val], std::nullopt};
     packet.mFadeInTime  = 0;
     packet.mFadeOutTime = INT_MAX;
@@ -208,17 +208,16 @@ void init() {
     data();
     load_config();
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerJoinEvent>([](auto& event) {
-        void* player = std::addressof(event.self());
-        if (data().contains(event.self().getUuid().asString()))
-            current_thirsts[player] = data()[event.self().getUuid().asString()];
-        else current_thirsts[player] = thirst_base;
-        ll::coro::keepThis([player]() -> ll::coro::CoroTask<> {
-            while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(player)) {
+        Player*   player = std::addressof(event.self());
+        mce::UUID uuid   = event.self().getUuid();
+        if (data().contains(uuid.asString())) current_thirsts[uuid] = data()[uuid.asString()];
+        else current_thirsts[uuid] = thirst_base;
+        ll::coro::keepThis([player, uuid]() -> ll::coro::CoroTask<> {
+            while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(uuid)) {
                 co_await ll::chrono::ticks(thirst_tick);
-                if (!current_thirsts.contains(player)) continue;
-                if (!static_cast<Player*>(player)->isAlive()
-                    || static_cast<Player*>(player)->getPlayerGameType() == GameType::Creative
-                    || static_cast<Player*>(player)->getPlayerGameType() == GameType::Spectator)
+                if (!current_thirsts.contains(uuid)) continue;
+                if (!player->isAlive() || player->getPlayerGameType() == GameType::Creative
+                    || player->getPlayerGameType() == GameType::Spectator)
                     continue;
                 for (const auto& [molang, cmds] : commands) {
                     if (exec_molang(static_cast<Player*>(player), molang))
@@ -231,16 +230,16 @@ void init() {
                             ll::service::getMinecraft()->getCommands().executeCommand(context, false);
                         }
                 }
-                show_text(static_cast<Player*>(player));
-                if (current_thirsts[player] > thirst_max) current_thirsts[player] = thirst_max;
-                if (current_thirsts[player] < thirst_min) current_thirsts[player] = thirst_min;
+                if (current_thirsts[uuid] > thirst_max) current_thirsts[uuid] = thirst_max;
+                if (current_thirsts[uuid] < thirst_min) current_thirsts[uuid] = thirst_min;
+                show_text(player);
             }
             co_return;
         }).launch(ll::thread::ServerThreadExecutor::getDefault());
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDisconnectEvent>([](auto& event) {
-        auto val = current_thirsts[std::addressof(event.self())];
-        current_thirsts.erase(std::addressof(event.self()));
+        auto val = current_thirsts[event.self().getUuid()];
+        current_thirsts.erase(event.self().getUuid());
         auto uuidstr = event.self().getUuid().asString();
         set_data(uuidstr, val);
     });
@@ -251,7 +250,7 @@ void init() {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
             auto  name  = block.getTypeName();
             if (modifications.contains(name)) {
-                current_thirsts[std::addressof(event.self())] += modifications[name].value;
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -263,7 +262,7 @@ void init() {
             } else {
                 name = name.substr(name.find(":") + 1);
                 if (modifications.contains(name)) {
-                    current_thirsts[std::addressof(event.self())] += modifications[name].value;
+                    current_thirsts[event.self().getUuid()] += modifications[name].value;
                     for (const auto& cmd : modifications[name].commands) {
                         CommandContext context = CommandContext(
                             cmd,
@@ -277,7 +276,7 @@ void init() {
         }
         auto name = event.item().getTypeName();
         if (modifications.contains(name)) {
-            current_thirsts[std::addressof(event.self())] += modifications[name].value;
+            current_thirsts[event.self().getUuid()] += modifications[name].value;
             for (const auto& cmd : modifications[name].commands) {
                 CommandContext context = CommandContext(
                     cmd,
@@ -290,7 +289,7 @@ void init() {
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
-                current_thirsts[std::addressof(event.self())] += modifications[name].value;
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -304,15 +303,13 @@ void init() {
                 return;
             }
         }
-        if (current_thirsts[std::addressof(event.self())] > thirst_max)
-            current_thirsts[std::addressof(event.self())] = thirst_max;
-        if (current_thirsts[std::addressof(event.self())] < thirst_min)
-            current_thirsts[std::addressof(event.self())] = thirst_min;
+        if (current_thirsts[event.self().getUuid()] > thirst_max) current_thirsts[event.self().getUuid()] = thirst_max;
+        if (current_thirsts[event.self().getUuid()] < thirst_min) current_thirsts[event.self().getUuid()] = thirst_min;
     });
     ll::event::EventBus::getInstance().emplaceListener<EatEvent>([](auto& event) {
         auto name = event.item.getTypeName();
         if (modifications.contains(name)) {
-            current_thirsts[std::addressof(event.self())] += modifications[name].value;
+            current_thirsts[event.self().getUuid()] += modifications[name].value;
             for (const auto& cmd : modifications[name].commands) {
                 CommandContext context = CommandContext(
                     cmd,
@@ -324,7 +321,7 @@ void init() {
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
-                current_thirsts[std::addressof(event.self())] += modifications[name].value;
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -337,15 +334,22 @@ void init() {
                 return;
             }
         }
-        if (current_thirsts[std::addressof(event.self())] > thirst_max)
-            current_thirsts[std::addressof(event.self())] = thirst_max;
-        if (current_thirsts[std::addressof(event.self())] < thirst_min)
-            current_thirsts[std::addressof(event.self())] = thirst_min;
+        if (current_thirsts[event.self().getUuid()] > thirst_max) current_thirsts[event.self().getUuid()] = thirst_max;
+        if (current_thirsts[event.self().getUuid()] < thirst_min) current_thirsts[event.self().getUuid()] = thirst_min;
     });
 }
 void deinit() {
-    for (auto [player, value] : current_thirsts) {
-        set_data(static_cast<const Player*>(player)->getUuid().asString(), value);
+    for (const auto& [uuid, value] : current_thirsts) {
+        set_data(uuid.asString(), value);
     }
     std::ofstream(mod::Mod::getInstance().getSelf().getDataDir() / "data.json") << data();
+}
+__declspec(dllexport) int get_thirst(const std::string& uuid) {
+    if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) return current_thirsts[key];
+    if (data().contains(uuid)) return data()[uuid].get<int>();
+    return -1;
+}
+__declspec(dllexport) void set_thirst(const std::string& uuid, int value) {
+    if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) current_thirsts[key] = value;
+    else data()[uuid] = value;
 }
