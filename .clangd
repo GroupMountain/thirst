@@ -4,7 +4,15 @@ Diagnostics:
     - "-Wc++11-narrowing"
     - "-Wc++2b-extensions"
     - "-Wmicrosoft-cast"
+    - "-Wcxx20_deducing_this"
+    - "-Wundefined_internal_type"
+    - "-Wincomplete_member_access"
 CompileFlags:
   Add:
     - "-ferror-limit=0"
     - '-D__FUNCTION__="dummy"'
+    - "-Dnsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD"
+    - "-D_HAS_CXX23=1"
+    - "-std:c++20"
+  Remove:
+    - "-std:c++latest"

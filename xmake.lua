@@ -23,7 +23,7 @@ option("target_type")
     set_values("server", "client")
 option_end()
 
-target("my-mod") -- Change this to your mod name.
+target("thirst") -- Change this to your mod name.
     add_rules("@levibuildscript/linkrule")
     add_rules("@levibuildscript/modpacker")
     add_cxflags( "/EHa", "/utf-8", "/W4", "/w44265", "/w44289", "/w44296", "/w45263", "/w44738", "/w45204")
@@ -31,7 +31,7 @@ target("my-mod") -- Change this to your mod name.
     add_packages("levilamina")
     set_exceptions("none") -- To avoid conflicts with /EHa.
     set_kind("shared")
-    set_languages("c++20")
+    set_languages("c++23")
     set_symbols("debug")
     add_files("src/**.cpp")
     add_includedirs("src")
