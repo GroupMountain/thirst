@@ -6,7 +6,6 @@
 void init();
 void deinit();
 
-
 namespace mod {
 
 Mod& Mod::getInstance() {
@@ -43,7 +42,6 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/event/Emitter.h"
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/player/PlayerDisconnectEvent.h"
-#include "ll/api/event/player/PlayerInteractBlockEvent.h" // IWYU pragma: keep
 #include "ll/api/event/player/PlayerJoinEvent.h"
 #include "ll/api/event/player/PlayerUseItemEvent.h"
 #include "ll/api/memory/Hook.h"
@@ -90,7 +88,9 @@ bool exec_molang(Player* player, const std::string& script) {
         "variable.current_thirst",
         static_cast<float>(current_thirsts[player])
     );
-    auto res                = player->evalMolang(script) != 0.0;
+
+    auto res = player->evalMolang(script) != 0.0;
+
     current_thirsts[player] = static_cast<int>(
         player->getMolangVariables()
             .getMolangVariable(HashedString{"variable.current_thirst"}.getHash(), "variable.current_thirst")
@@ -203,7 +203,7 @@ void init() {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
             auto  name  = block.getTypeName();
             if (modifications.contains(name)) {
-                current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
+                current_thirsts[std::addressof(event.self())] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -215,7 +215,7 @@ void init() {
             } else {
                 name = name.substr(name.find(":") + 1);
                 if (modifications.contains(name)) {
-                    current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
+                    current_thirsts[std::addressof(event.self())] += modifications[name].value;
                     for (const auto& cmd : modifications[name].commands) {
                         CommandContext context = CommandContext(
                             cmd,
@@ -229,7 +229,7 @@ void init() {
         }
         auto name = event.item().getTypeName();
         if (modifications.contains(name)) {
-            current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
+            current_thirsts[std::addressof(event.self())] += modifications[name].value;
             for (const auto& cmd : modifications[name].commands) {
                 CommandContext context = CommandContext(
                     cmd,
@@ -242,8 +242,7 @@ void init() {
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
-                current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
-
+                current_thirsts[std::addressof(event.self())] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -257,15 +256,15 @@ void init() {
                 return;
             }
         }
-        if (current_thirsts[(void*)std::addressof(event.self())] > thirst_max)
-            current_thirsts[(void*)std::addressof(event.self())] = thirst_max;
-        if (current_thirsts[(void*)std::addressof(event.self())] < thirst_min)
-            current_thirsts[(void*)std::addressof(event.self())] = thirst_min;
+        if (current_thirsts[std::addressof(event.self())] > thirst_max)
+            current_thirsts[std::addressof(event.self())] = thirst_max;
+        if (current_thirsts[std::addressof(event.self())] < thirst_min)
+            current_thirsts[std::addressof(event.self())] = thirst_min;
     });
     ll::event::EventBus::getInstance().emplaceListener<EatEvent>([](auto& event) {
         auto name = event.item.getTypeName();
         if (modifications.contains(name)) {
-            current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
+            current_thirsts[std::addressof(event.self())] += modifications[name].value;
             for (const auto& cmd : modifications[name].commands) {
                 CommandContext context = CommandContext(
                     cmd,
@@ -277,7 +276,7 @@ void init() {
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
-                current_thirsts[(void*)std::addressof(event.self())] += modifications[name].value;
+                current_thirsts[std::addressof(event.self())] += modifications[name].value;
                 for (const auto& cmd : modifications[name].commands) {
                     CommandContext context = CommandContext(
                         cmd,
@@ -290,15 +289,14 @@ void init() {
                 return;
             }
         }
-        if (current_thirsts[(void*)std::addressof(event.self())] > thirst_max)
-            current_thirsts[(void*)std::addressof(event.self())] = thirst_max;
-        if (current_thirsts[(void*)std::addressof(event.self())] < thirst_min)
-            current_thirsts[(void*)std::addressof(event.self())] = thirst_min;
+        if (current_thirsts[std::addressof(event.self())] > thirst_max)
+            current_thirsts[std::addressof(event.self())] = thirst_max;
+        if (current_thirsts[std::addressof(event.self())] < thirst_min)
+            current_thirsts[std::addressof(event.self())] = thirst_min;
     });
 }
 void deinit() {
     for (auto [player, value] : current_thirsts) {
-        mod::Mod::getInstance().getSelf().getLogger().info("{}", player);
         set_data(static_cast<const Player*>(player)->getUuid().asString(), value);
     }
     std::ofstream(mod::Mod::getInstance().getSelf().getDataDir() / "data.json") << data();
