@@ -52,7 +52,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/thread/ServerThreadExecutor.h"
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/deps/core/utility/MCRESULT.h" // IWYU pragma: keep
-#include "mc/nbt/CompoundTag.h"
+#include "mc/nbt/CompoundTag.h"            // IWYU pragma: keep
 #include "mc/network/packet/SetTitlePacket.h"
 #include "mc/platform/UUID.h" // IWYU pragma: keep
 #include "mc/server/commands/CommandContext.h"
