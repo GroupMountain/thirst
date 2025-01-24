@@ -134,6 +134,14 @@ bool exec_molang(Player* player, const std::string& script) {
     return res;
 }
 
+void exec_cmds(Player* player, const std::vector<std::string>& cmds) {
+    for (const auto& cmd : cmds) {
+        CommandContext context =
+            CommandContext(cmd, std::make_unique<PlayerCommandOrigin>(*player), CommandVersion::CurrentVersion());
+        ll::service::getMinecraft()->getCommands().executeCommand(context, false);
+    }
+}
+
 nlohmann::json& data() {
     static nlohmann::json data = [] {
         auto dir = mod::Mod::getInstance().getSelf().getDataDir();
@@ -187,9 +195,6 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     origin(instance);
 }
 void show_text(Player* player) {
-    if (!show_thirsts.contains(player->getUuid())) {
-        show_thirsts[player->getUuid()] = true;
-    }
     if (!show_thirsts[player->getUuid()]) {
         SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, "", std::nullopt};
         packet.mFadeInTime  = 0;
@@ -224,6 +229,7 @@ void init() {
         mce::UUID uuid   = event.self().getUuid();
         if (data().contains(uuid.asString())) current_thirsts[uuid] = data()[uuid.asString()];
         else current_thirsts[uuid] = thirst_base;
+        if (!show_thirsts.contains(uuid)) show_thirsts[uuid] = true;
         ll::coro::keepThis([player, uuid]() -> ll::coro::CoroTask<> {
             while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(uuid)) {
                 co_await ll::chrono::ticks(thirst_tick);
@@ -232,15 +238,7 @@ void init() {
                     || player->getPlayerGameType() == GameType::Spectator)
                     continue;
                 for (const auto& [molang, cmds] : commands) {
-                    if (exec_molang(static_cast<Player*>(player), molang))
-                        for (const auto& cmd : cmds) {
-                            CommandContext context = CommandContext(
-                                cmd,
-                                std::make_unique<PlayerCommandOrigin>(*static_cast<Player*>(player)),
-                                CommandVersion::CurrentVersion()
-                            );
-                            ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-                        }
+                    if (exec_molang(static_cast<Player*>(player), molang)) exec_cmds(player, cmds);
                 }
                 if (current_thirsts[uuid] > thirst_max) current_thirsts[uuid] = thirst_max;
                 if (current_thirsts[uuid] < thirst_min) current_thirsts[uuid] = thirst_min;
@@ -263,53 +261,25 @@ void init() {
             auto  name  = block.getTypeName();
             if (modifications.contains(name)) {
                 current_thirsts[event.self().getUuid()] += modifications[name].value;
-                for (const auto& cmd : modifications[name].commands) {
-                    CommandContext context = CommandContext(
-                        cmd,
-                        std::make_unique<PlayerCommandOrigin>(event.self()),
-                        CommandVersion::CurrentVersion()
-                    );
-                    ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-                }
+                exec_cmds(&event.self(), modifications[name].commands);
             } else {
                 name = name.substr(name.find(":") + 1);
                 if (modifications.contains(name)) {
                     current_thirsts[event.self().getUuid()] += modifications[name].value;
-                    for (const auto& cmd : modifications[name].commands) {
-                        CommandContext context = CommandContext(
-                            cmd,
-                            std::make_unique<PlayerCommandOrigin>(event.self()),
-                            CommandVersion::CurrentVersion()
-                        );
-                        ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-                    }
+                    exec_cmds(&event.self(), modifications[name].commands);
                 }
             }
         }
         auto name = event.item().getTypeName();
         if (modifications.contains(name)) {
             current_thirsts[event.self().getUuid()] += modifications[name].value;
-            for (const auto& cmd : modifications[name].commands) {
-                CommandContext context = CommandContext(
-                    cmd,
-                    std::make_unique<PlayerCommandOrigin>(event.self()),
-                    CommandVersion::CurrentVersion()
-                );
-                ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-            }
+            exec_cmds(&event.self(), modifications[name].commands);
             const_cast<ItemStack*>(event.self().getAllHand()[0])->remove(1);
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
                 current_thirsts[event.self().getUuid()] += modifications[name].value;
-                for (const auto& cmd : modifications[name].commands) {
-                    CommandContext context = CommandContext(
-                        cmd,
-                        std::make_unique<PlayerCommandOrigin>(event.self()),
-                        CommandVersion::CurrentVersion()
-                    );
-                    ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-                }
+                exec_cmds(&event.self(), modifications[name].commands);
                 const_cast<ItemStack*>(event.self().getAllHand()[0])->remove(1);
             } else {
                 return;
@@ -322,26 +292,12 @@ void init() {
         auto name = event.item.getTypeName();
         if (modifications.contains(name)) {
             current_thirsts[event.self().getUuid()] += modifications[name].value;
-            for (const auto& cmd : modifications[name].commands) {
-                CommandContext context = CommandContext(
-                    cmd,
-                    std::make_unique<PlayerCommandOrigin>(event.self()),
-                    CommandVersion::CurrentVersion()
-                );
-                ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-            }
+            exec_cmds(&event.self(), modifications[name].commands);
         } else {
             name = name.substr(name.find(":") + 1);
             if (modifications.contains(name)) {
                 current_thirsts[event.self().getUuid()] += modifications[name].value;
-                for (const auto& cmd : modifications[name].commands) {
-                    CommandContext context = CommandContext(
-                        cmd,
-                        std::make_unique<PlayerCommandOrigin>(event.self()),
-                        CommandVersion::CurrentVersion()
-                    );
-                    ll::service::getMinecraft()->getCommands().executeCommand(context, false);
-                }
+                exec_cmds(&event.self(), modifications[name].commands);
             } else {
                 return;
             }
@@ -361,9 +317,13 @@ __declspec(dllexport) int get_thirst(const std::string& uuid) {
     if (data().contains(uuid)) return data()[uuid].get<int>();
     return -1;
 }
-__declspec(dllexport) void set_thirst(const std::string& uuid, int value) {
-    if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) current_thirsts[key] = value;
-    else data()[uuid] = value;
+__declspec(dllexport) bool set_thirst(const std::string& uuid, int value) {
+    if (value < thirst_min || value > thirst_max) return false;
+    if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) {
+        current_thirsts[key] = value;
+        show_text(ll::service::getLevel()->getPlayer(uuid));
+    } else data()[uuid] = value;
+    return true;
 }
 __declspec(dllexport) void set_show_thirst(const std::string& uuid, bool value) {
     show_thirsts[mce::UUID::fromString(uuid)] = value;

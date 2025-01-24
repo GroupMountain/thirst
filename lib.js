@@ -4,7 +4,7 @@ const thirst_api = {
    **/
   getThirst: ll.import("thirst", "getThirst"),
   /**
-   *  @type {function(string,number):void}
+   *  @type {function(string,number):Boolean}
    **/
   setThirst: ll.import("thirst", "setThirst"),
   /**
@@ -22,7 +22,7 @@ function getThirst(uuid) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {number}
+ * @returns {Boolean}
  */
 function setThirst(uuid, value) {
   return thirst_api.setThirst(uuid, value);
@@ -30,7 +30,7 @@ function setThirst(uuid, value) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {number}
+ * @returns {Boolean}
  */
 function addThirst(uuid, value) {
   return setThirst(uuid, getThirst(uuid) + value);
@@ -38,7 +38,7 @@ function addThirst(uuid, value) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {number}
+ * @returns {Boolean}
  */
 function reduceThirst(uuid, value) {
   return setThirst(uuid, getThirst(uuid) - value);
@@ -46,7 +46,7 @@ function reduceThirst(uuid, value) {
 /**
  * @param {string} uuid
  * @param {Boolean} value
- * @returns {number}
+ * @returns {void}
  */
 function setShowThirst(uuid, value) {
   return thirst_api.setShowThirst(uuid, value);
