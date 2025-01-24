@@ -71,6 +71,9 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/Minecraft.h"
 #include "mc/world/actor/RenderParams.h"
 #include "mc/world/events/ServerInstanceEventCoordinator.h"
+#include "mc/world/item/Item.h"
+#include "mc/world/item/PotionItem.h"
+#include "mc/world/level/ActorEventBroadcaster.h"
 #include "mc/world/level/BlockSource.h" // IWYU pragma: keep
 #include "mc/world/level/Level.h"
 #include "mc/world/level/biome/Biome.h"
@@ -201,6 +204,35 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     ll::event::EventBus::getInstance().publish(EatEvent{*this, const_cast<ItemStack&>(instance)});
     origin(instance);
 }
+struct PlayerUsingData {
+    uint64    begin_time;
+    int       duration;
+    ItemStack item;
+};
+phmap::flat_hash_map<Player*, PlayerUsingData> start_using_time;
+LL_AUTO_TYPE_INSTANCE_HOOK(
+    PlayerStartUsingItem,
+    HookPriority::Normal,
+    Player,
+    &Player::startUsingItem,
+    void,
+    ::ItemStack const& instance,
+    int                duration
+) {
+    if (instance.isPotionItem()) {
+        start_using_time[this] = {ll::service::getLevel()->getCurrentServerTick().tickID, duration, instance.clone()};
+    }
+    origin(instance, duration);
+}
+LL_AUTO_TYPE_INSTANCE_HOOK(PlayerStopUsingItem, HookPriority::Normal, Player, &Player::stopUsingItem, void) {
+    if (start_using_time.contains(this)) {
+        auto& [beg, duration, item] = start_using_time[this];
+        if (ll::service::getLevel()->getCurrentServerTick().tickID - beg >= static_cast<uint64>(duration - 6))
+            ll::event::EventBus::getInstance().publish(EatEvent{*this, item});
+        start_using_time.erase(this);
+    }
+    origin();
+}
 void show_text(Player* player) {
     if (!show_thirsts[player->getUuid()]) {
         SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, "", std::nullopt};
@@ -239,17 +271,22 @@ void init() {
         if (!show_thirsts.contains(uuid)) show_thirsts[uuid] = true;
         ll::coro::keepThis([player, uuid]() -> ll::coro::CoroTask<> {
             while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(uuid)) {
-                co_await ll::chrono::ticks(thirst_tick);
-                if (!current_thirsts.contains(uuid)) continue;
+                bool continue_flag = false;
+                if (!current_thirsts.contains(uuid)) continue_flag = true;
                 if (!player->isAlive() || player->getPlayerGameType() == GameType::Creative
                     || player->getPlayerGameType() == GameType::Spectator)
+                    continue_flag = true;
+                if (continue_flag) {
+                    co_await ll::chrono::ticks(1);
                     continue;
+                }
                 if (current_thirsts[uuid] > thirst_max) current_thirsts[uuid] = thirst_max;
                 if (current_thirsts[uuid] < thirst_min) current_thirsts[uuid] = thirst_min;
                 show_text(player);
                 for (const auto& [molang, cmds] : commands) {
                     if (exec_molang(static_cast<Player*>(player), molang)) exec_cmds(player, cmds);
                 }
+                co_await ll::chrono::ticks(thirst_tick);
             }
             co_return;
         }).launch(ll::thread::ServerThreadExecutor::getDefault());
@@ -261,8 +298,8 @@ void init() {
         set_data(uuidstr, val);
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerUseItemEvent>([](auto& event) {
-        if (event.item().getComponent("minecraft:food")) return;
-
+        if (event.item().getItem()->isFood() || event.item().isPotionItem()) return;
+        mod::Mod::getInstance().getSelf().getLogger().info(event.item().getTypeName());
         if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
             auto  name  = block.getTypeName();
@@ -307,6 +344,7 @@ void init() {
     });
     ll::event::EventBus::getInstance().emplaceListener<EatEvent>([](auto& event) {
         auto name = event.item.getTypeName();
+        mod::Mod::getInstance().getSelf().getLogger().info("eat:{}", event.item.getTypeName());
         if (modifications.contains(name)) {
             current_thirsts[event.self().getUuid()] += modifications[name].value;
             exec_cmds(&event.self(), modifications[name].commands);
@@ -363,9 +401,10 @@ void init() {
             }
         }
     });
-    ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDieEvent>([](auto& event) {
-        current_thirsts[event.self().getUuid()] = thirst_base;
-    });
+    ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDieEvent>(
+        [](auto& event) { current_thirsts[event.self().getUuid()] = thirst_base; },
+        ll::event::EventPriority::Highest
+    );
 }
 void deinit() {
     for (const auto& [uuid, value] : current_thirsts) {
