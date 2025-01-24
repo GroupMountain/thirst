@@ -265,11 +265,21 @@ void init() {
             if (modifications.contains(name)) {
                 current_thirsts[event.self().getUuid()] += modifications[name].value;
                 exec_cmds(&event.self(), modifications[name].commands);
+            } else if (name = name.substr(name.find(":") + 1); modifications.contains(name)) {
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
+                exec_cmds(&event.self(), modifications[name].commands);
             } else {
-                name = name.substr(name.find(":") + 1);
+                auto& extra_block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid, 1);
+                name              = extra_block.getTypeName();
                 if (modifications.contains(name)) {
                     current_thirsts[event.self().getUuid()] += modifications[name].value;
                     exec_cmds(&event.self(), modifications[name].commands);
+                } else {
+                    name = name.substr(name.find(":") + 1);
+                    if (modifications.contains(name)) {
+                        current_thirsts[event.self().getUuid()] += modifications[name].value;
+                        exec_cmds(&event.self(), modifications[name].commands);
+                    }
                 }
             }
         }
@@ -327,9 +337,6 @@ void init() {
         if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
             auto  name  = block.getTypeName();
-            event.self().sendMessage(
-                std::format("{:b}", (int)block.getMaterial().mUnk2f9c1b.template as<MaterialType>())
-            );
             if (modifications.contains(name)) {
                 current_thirsts[event.self().getUuid()] += modifications[name].value;
                 exec_cmds(&event.self(), modifications[name].commands);
