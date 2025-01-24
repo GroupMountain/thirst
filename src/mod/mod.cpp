@@ -42,12 +42,14 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/event/Emitter.h"
 #include "ll/api/event/EventBus.h"
 #include "ll/api/event/player/PlayerDisconnectEvent.h"
+#include "ll/api/event/player/PlayerInteractBlockEvent.h"
 #include "ll/api/event/player/PlayerJoinEvent.h"
 #include "ll/api/event/player/PlayerUseItemEvent.h"
 #include "ll/api/memory/Hook.h"
 #include "ll/api/service/Bedrock.h"
 #include "ll/api/service/GamingStatus.h"
 #include "ll/api/thread/ServerThreadExecutor.h"
+#include "mc/common/ActorUniqueID.h"
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/deps/core/utility/MCRESULT.h" // IWYU pragma: keep
 #include "mc/nbt/CompoundTag.h"            // IWYU pragma: keep
@@ -72,6 +74,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/level/block/Block.h"
 #include "mc/world/level/dimension/Dimension.h"
 #include "mc/world/level/levelgen/WorldGenerator.h"
+#include "mc/world/level/material/Material.h"
 #include "mc/world/phys/HitResult.h" // IWYU pragma: keep
 
 
@@ -304,6 +307,50 @@ void init() {
         }
         if (current_thirsts[event.self().getUuid()] > thirst_max) current_thirsts[event.self().getUuid()] = thirst_max;
         if (current_thirsts[event.self().getUuid()] < thirst_min) current_thirsts[event.self().getUuid()] = thirst_min;
+    });
+    ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerInteractBlockEvent>([](auto& event) {
+        static phmap::flat_hash_map<ActorUniqueID, std::chrono::time_point<std::chrono::steady_clock>>
+            last_trigger_times;
+        using namespace std::literals;
+        const auto& id = event.self().getOrCreateUniqueID();
+        if (last_trigger_times.contains(id)) {
+            auto& last_trigger_time = last_trigger_times[id];
+            if (std::chrono::steady_clock::now() - last_trigger_time < 0.25s) {
+                return;
+            } else {
+                last_trigger_time = std::chrono::steady_clock::now();
+            }
+        } else {
+            last_trigger_times[id] = std::chrono::steady_clock::now();
+        }
+
+        if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
+            auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
+            auto  name  = block.getTypeName();
+            event.self().sendMessage(
+                std::format("{:b}", (int)block.getMaterial().mUnk2f9c1b.template as<MaterialType>())
+            );
+            if (modifications.contains(name)) {
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
+                exec_cmds(&event.self(), modifications[name].commands);
+            } else if (name = name.substr(name.find(":") + 1); modifications.contains(name)) {
+                current_thirsts[event.self().getUuid()] += modifications[name].value;
+                exec_cmds(&event.self(), modifications[name].commands);
+            } else {
+                auto& extra_block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid, 1);
+                name              = extra_block.getTypeName();
+                if (modifications.contains(name)) {
+                    current_thirsts[event.self().getUuid()] += modifications[name].value;
+                    exec_cmds(&event.self(), modifications[name].commands);
+                } else {
+                    name = name.substr(name.find(":") + 1);
+                    if (modifications.contains(name)) {
+                        current_thirsts[event.self().getUuid()] += modifications[name].value;
+                        exec_cmds(&event.self(), modifications[name].commands);
+                    }
+                }
+            }
+        }
     });
 }
 void deinit() {
