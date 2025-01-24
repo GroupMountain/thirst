@@ -16,6 +16,8 @@ Mod& Mod::getInstance() {
 bool Mod::load() {
     getSelf().getLogger().debug("Loading...");
     // Code for loading the mod goes here.
+    getSelf().getLogger().info("Thirst by killcerr loaded");
+    getSelf().getLogger().debug("Loaded...");
     return true;
 }
 
@@ -23,6 +25,7 @@ bool Mod::enable() {
     getSelf().getLogger().debug("Enabling...");
     // Code for enabling the mod goes here.
     init();
+    getSelf().getLogger().debug("Enabled...");
     return true;
 }
 
@@ -30,6 +33,7 @@ bool Mod::disable() {
     getSelf().getLogger().debug("Disabling...");
     // Code for disabling the mod goes here.
     deinit();
+    getSelf().getLogger().debug("Disabled...");
     return true;
 }
 
@@ -41,6 +45,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/coro/CoroTask.h"
 #include "ll/api/event/Emitter.h"
 #include "ll/api/event/EventBus.h"
+#include "ll/api/event/player/PlayerDieEvent.h"
 #include "ll/api/event/player/PlayerDisconnectEvent.h"
 #include "ll/api/event/player/PlayerInteractBlockEvent.h"
 #include "ll/api/event/player/PlayerJoinEvent.h"
@@ -74,7 +79,6 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/level/block/Block.h"
 #include "mc/world/level/dimension/Dimension.h"
 #include "mc/world/level/levelgen/WorldGenerator.h"
-#include "mc/world/level/material/Material.h"
 #include "mc/world/phys/HitResult.h" // IWYU pragma: keep
 
 
@@ -240,12 +244,12 @@ void init() {
                 if (!player->isAlive() || player->getPlayerGameType() == GameType::Creative
                     || player->getPlayerGameType() == GameType::Spectator)
                     continue;
-                for (const auto& [molang, cmds] : commands) {
-                    if (exec_molang(static_cast<Player*>(player), molang)) exec_cmds(player, cmds);
-                }
                 if (current_thirsts[uuid] > thirst_max) current_thirsts[uuid] = thirst_max;
                 if (current_thirsts[uuid] < thirst_min) current_thirsts[uuid] = thirst_min;
                 show_text(player);
+                for (const auto& [molang, cmds] : commands) {
+                    if (exec_molang(static_cast<Player*>(player), molang)) exec_cmds(player, cmds);
+                }
             }
             co_return;
         }).launch(ll::thread::ServerThreadExecutor::getDefault());
@@ -358,6 +362,9 @@ void init() {
                 }
             }
         }
+    });
+    ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDieEvent>([](auto& event) {
+        current_thirsts[event.self().getUuid()] = thirst_base;
     });
 }
 void deinit() {
