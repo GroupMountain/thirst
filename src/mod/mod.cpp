@@ -219,7 +219,7 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
     ::ItemStack const& instance,
     int                duration
 ) {
-    if (instance.isPotionItem()) {
+    if (instance.isPotionItem() || instance.getTypeName() == "minecraft:milk_bucket") {
         start_using_time[this] = {ll::service::getLevel()->getCurrentServerTick().tickID, duration, instance.clone()};
     }
     origin(instance, duration);
@@ -298,7 +298,9 @@ void init() {
         set_data(uuidstr, val);
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerUseItemEvent>([](auto& event) {
-        if (event.item().getItem()->isFood() || event.item().isPotionItem()) return;
+        if (event.item().getItem()->isFood() || event.item().isPotionItem()
+            || event.item().getTypeName() == "minecraft:milk_bucket")
+            return;
         mod::Mod::getInstance().getSelf().getLogger().info(event.item().getTypeName());
         if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
@@ -344,7 +346,6 @@ void init() {
     });
     ll::event::EventBus::getInstance().emplaceListener<EatEvent>([](auto& event) {
         auto name = event.item.getTypeName();
-        mod::Mod::getInstance().getSelf().getLogger().info("eat:{}", event.item.getTypeName());
         if (modifications.contains(name)) {
             current_thirsts[event.self().getUuid()] += modifications[name].value;
             exec_cmds(&event.self(), modifications[name].commands);
