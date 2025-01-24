@@ -271,12 +271,9 @@ void init() {
         if (!show_thirsts.contains(uuid)) show_thirsts[uuid] = true;
         ll::coro::keepThis([player, uuid]() -> ll::coro::CoroTask<> {
             while (ll::getGamingStatus() == ll::GamingStatus::Running && current_thirsts.contains(uuid)) {
-                bool continue_flag = false;
-                if (!current_thirsts.contains(uuid)) continue_flag = true;
+                if (!current_thirsts.contains(uuid)) co_return;
                 if (!player->isAlive() || player->getPlayerGameType() == GameType::Creative
-                    || player->getPlayerGameType() == GameType::Spectator)
-                    continue_flag = true;
-                if (continue_flag) {
+                    || player->getPlayerGameType() == GameType::Spectator) {
                     co_await ll::chrono::ticks(1);
                     continue;
                 }
@@ -363,6 +360,7 @@ void init() {
         if (current_thirsts[event.self().getUuid()] < thirst_min) current_thirsts[event.self().getUuid()] = thirst_min;
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerInteractBlockEvent>([](auto& event) {
+        if (!event.self().isSneaking()) return;
         static phmap::flat_hash_map<ActorUniqueID, std::chrono::time_point<std::chrono::steady_clock>>
             last_trigger_times;
         using namespace std::literals;
@@ -404,7 +402,7 @@ void init() {
         }
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDieEvent>(
-        [](auto& event) { current_thirsts[event.self().getUuid()] = thirst_base; },
+        [](auto& event) { current_thirsts[event.self().getUuid()] = thirst_base + 1; },
         ll::event::EventPriority::Highest
     );
 }
