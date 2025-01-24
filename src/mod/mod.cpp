@@ -382,7 +382,7 @@ __declspec(dllexport) bool set_thirst(const std::string& uuid, int value) {
     if (value < thirst_min || value > thirst_max) return false;
     if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) {
         current_thirsts[key] = value;
-        show_text(ll::service::getLevel()->getPlayer(uuid));
+        show_text(ll::service::getLevel()->getPlayer(key));
     } else data()[uuid] = value;
     return true;
 }
