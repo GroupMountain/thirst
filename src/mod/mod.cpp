@@ -301,6 +301,7 @@ void init() {
         if (event.item().getItem()->isFood() || event.item().isPotionItem()
             || event.item().getTypeName() == "minecraft:milk_bucket")
             return;
+        if (!event.self().isSneaking()) return;
         mod::Mod::getInstance().getSelf().getLogger().info(event.item().getTypeName());
         if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
