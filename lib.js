@@ -64,8 +64,11 @@ function registerOnTickCallback(uuid, callback) {
   const namespace = Math.random().toString();
   const functionName = Math.random().toString();
   ll.export(namespace, functionName, callback);
-  return ll.import(
-    "thirst",
-    thirst_api.registerOnTickCallback(uuid, namespace, functionName)
+  const importName = thirst_api.registerOnTickCallback(
+    uuid,
+    namespace,
+    functionName
   );
+  if (importName == "") return null;
+  else return ll.import("thirst", importName);
 }
