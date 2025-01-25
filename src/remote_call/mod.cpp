@@ -49,8 +49,11 @@ void export_api() {
                 if (unregister_callback) {
                     RemoteCall::exportAs("thirst", "_" + std::to_string(unregister_callback_idx), unregister_callback);
                     return "_" + std::to_string(unregister_callback_idx++);
+                } else {
+                    throw std::runtime_error("unable to register callback");
                 }
-            } catch (...) {
+            } catch (std::exception& e) {
+                mod::Mod::getInstance().getSelf().getLogger().error("{}", e.what());
                 return "";
             }
         }
