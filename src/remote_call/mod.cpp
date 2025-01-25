@@ -39,4 +39,20 @@ void export_api() {
     RemoteCall::exportAs("thirst", "getThirst", get_thirst);
     RemoteCall::exportAs("thirst", "setThirst", set_thirst);
     RemoteCall::exportAs("thirst", "setShowThirst", set_show_thirst);
+    RemoteCall::exportAs(
+        "thirst",
+        "registerOnTickCallback",
+        [](const std::string& uuid, const std::string& ns, const std::string& fn) -> std::string {
+            static std::size_t unregister_callback_idx = 0;
+            try {
+                auto unregister_callback = register_on_tick_callback(uuid, RemoteCall::importAs<void()>(ns, fn));
+                if (unregister_callback) {
+                    RemoteCall::exportAs("thirst", "_" + std::to_string(unregister_callback_idx), unregister_callback);
+                    return "_" + std::to_string(unregister_callback_idx++);
+                }
+            } catch (...) {
+                return "";
+            }
+        }
+    );
 }

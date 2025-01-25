@@ -10,7 +10,11 @@ const thirst_api = {
   /**
    *  @type {function(string,Boolean):void}
    **/
-  setShowThirst: ll.import("thirst", "setShowThirst")
+  setShowThirst: ll.import("thirst", "setShowThirst"),
+  /**
+   *  @type {function(string,string,string):string}
+   */
+  registerOnTickCallback: ll.import("thirst", "registerOnTickCallback")
 };
 /**
  * @param {string} uuid
@@ -50,4 +54,18 @@ function reduceThirst(uuid, value) {
  */
 function setShowThirst(uuid, value) {
   return thirst_api.setShowThirst(uuid, value);
+}
+/**
+ * @param {string} uuid
+ * @param {function():void} callback
+ * @returns {function():Boolean}
+ */
+function registerOnTickCallback(uuid, callback) {
+  const namespace = Math.random().toString();
+  const functionName = Math.random().toString();
+  ll.export(namespace, functionName, callback);
+  return ll.import(
+    "thirst",
+    thirst_api.registerOnTickCallback(uuid, namespace, functionName)
+  );
 }

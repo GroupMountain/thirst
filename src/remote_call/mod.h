@@ -4,6 +4,8 @@
 __declspec(dllimport) int  get_thirst(const std::string& uuid);
 __declspec(dllimport) bool set_thirst(const std::string& uuid, int value);
 __declspec(dllimport) void set_show_thirst(const std::string& uuid, bool value);
+__declspec(dllimport)      std::function<bool(void)>
+                           register_on_tick_callback(const std::string& uuid, std::function<void()>&& callback);
 namespace mod {
 
 class Mod {

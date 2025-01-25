@@ -94,15 +94,16 @@ struct Modification {
     int                      value;
     std::vector<std::string> commands;
 };
-std::unordered_map<mce::UUID, int>                        current_thirsts;
-std::unordered_map<std::string, Modification>             modifications;
-std::unordered_map<std::string, std::vector<std::string>> commands;
-std::unordered_map<int, std::string>                      texts;
-std::unordered_map<mce::UUID, bool>                       show_thirsts;
-int                                                       thirst_base;
-int                                                       thirst_max;
-int                                                       thirst_min;
-int                                                       thirst_tick;
+std::unordered_map<mce::UUID, int>                                                        current_thirsts;
+std::unordered_map<std::string, Modification>                                             modifications;
+std::unordered_map<std::string, std::vector<std::string>>                                 commands;
+std::unordered_map<int, std::string>                                                      texts;
+std::unordered_map<mce::UUID, bool>                                                       show_thirsts;
+int                                                                                       thirst_base;
+int                                                                                       thirst_max;
+int                                                                                       thirst_min;
+int                                                                                       thirst_tick;
+phmap::flat_hash_map<mce::UUID, phmap::flat_hash_map<std::size_t, std::function<void()>>> on_tick_callbacks;
 
 
 void init_molang() {
@@ -178,7 +179,7 @@ void load_config() {
         int                                                       thirst_base   = 20;
         int                                                       thirst_max    = 20;
         int                                                       thirst_min    = 0;
-        int                                                       thirst_tick   = 20;
+        int                                                       thirst_tick   = 200;
     } config;
     auto dir = mod::Mod::getInstance().getSelf().getConfigDir();
     if (!std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
@@ -275,16 +276,23 @@ void init() {
                 for (const auto& [molang, cmds] : commands) {
                     if (exec_molang(static_cast<Player*>(player), molang)) exec_cmds(player, cmds);
                 }
+                if (on_tick_callbacks.contains(uuid)) {
+                    for (auto& [_, callback] : on_tick_callbacks[uuid]) {
+                        callback();
+                    }
+                }
                 co_await ll::chrono::ticks(thirst_tick);
             }
             co_return;
         }).launch(ll::thread::ServerThreadExecutor::getDefault());
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerDisconnectEvent>([](auto& event) {
-        auto val = current_thirsts[event.self().getUuid()];
-        current_thirsts.erase(event.self().getUuid());
-        auto uuidstr = event.self().getUuid().asString();
+        auto uuid = event.self().getUuid();
+        auto val  = current_thirsts[uuid];
+        current_thirsts.erase(uuid);
+        auto uuidstr = uuid.asString();
         set_data(uuidstr, val);
+        on_tick_callbacks.erase(uuid);
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerUseItemEvent>([](auto& event) {
         if (event.item().getItem()->isFood() || event.item().isPotionItem()
@@ -419,4 +427,23 @@ __declspec(dllexport) bool set_thirst(const std::string& uuid, int value) {
 }
 __declspec(dllexport) void set_show_thirst(const std::string& uuid, bool value) {
     show_thirsts[mce::UUID::fromString(uuid)] = value;
+}
+__declspec(dllexport) std::function<bool(void)>
+                      register_on_tick_callback(const std::string& uuid, std::function<void()>&& callback) {
+    static std::size_t idx = 0;
+    if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) {
+        on_tick_callbacks[key][idx] = callback;
+        return std::bind(
+            [](mce::UUID uuid, std::size_t idx) -> bool {
+                if (on_tick_callbacks.contains(uuid) && on_tick_callbacks[uuid].contains(idx)) {
+                    on_tick_callbacks[uuid].erase(idx);
+                    return true;
+                }
+                return false;
+            },
+            key,
+            idx++
+        );
+    }
+    return nullptr;
 }
