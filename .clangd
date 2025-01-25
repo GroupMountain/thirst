@@ -8,7 +8,16 @@ Diagnostics:
     - "-Wundefined_internal_type"
     - "-Wincomplete_member_access"
     - "-Wsizeof_alignof_incomplete_or_sizeless_type"
+    - "-Wexplicit_spec_non_template"
 CompileFlags:
-  Add: ["--target=x86_64-windows-msvc", "-ferror-limit=0", '-D__FUNCTION__="dummy"', "-Dnsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD", "-D_HAS_CXX23=1", "-std:c++20"]
-  Remove:["-std"]
-  
+  Add:
+    [
+      "-Xclang",
+      "-triple=x86_64-windows-msvc",
+      "-ferror-limit=0",
+      '-D__FUNCTION__="dummy"',
+      "-Dnsel_CONFIG_SELECT_EXPECTED=nsel_EXPECTED_NONSTD",
+      "-Xclang",
+      "-std=c++23"
+    ]
+  Remove: ["-std"]
