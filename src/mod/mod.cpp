@@ -57,7 +57,8 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/common/ActorUniqueID.h"
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/deps/core/utility/MCRESULT.h" // IWYU pragma: keep
-#include "mc/nbt/CompoundTag.h"            // IWYU pragma: keep
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
+#include "mc/nbt/CompoundTag.h" // IWYU pragma: keep
 #include "mc/network/packet/SetTitlePacket.h"
 #include "mc/platform/UUID.h" // IWYU pragma: keep
 #include "mc/server/commands/CommandContext.h"
@@ -70,6 +71,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/util/MolangVariableMap.h"
 #include "mc/world/Minecraft.h"
 #include "mc/world/actor/RenderParams.h"
+#include "mc/world/actor/player/PlayerItemInUse.h"
 #include "mc/world/events/ServerInstanceEventCoordinator.h"
 #include "mc/world/item/Item.h"
 #include "mc/world/item/PotionItem.h"
@@ -177,7 +179,6 @@ void load_config() {
         int                                                       thirst_max    = 20;
         int                                                       thirst_min    = 0;
         int                                                       thirst_tick   = 20;
-
     } config;
     auto dir = mod::Mod::getInstance().getSelf().getConfigDir();
     if (!std::filesystem::exists(dir)) std::filesystem::create_directories(dir);
@@ -204,34 +205,25 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     ll::event::EventBus::getInstance().publish(EatEvent{*this, const_cast<ItemStack&>(instance)});
     origin(instance);
 }
-struct PlayerUsingData {
-    uint64    begin_time;
-    int       duration;
-    ItemStack item;
-};
-phmap::flat_hash_map<Player*, PlayerUsingData> start_using_time;
 LL_AUTO_TYPE_INSTANCE_HOOK(
-    PlayerStartUsingItem,
+    ClearItemInUseHook,
     HookPriority::Normal,
-    Player,
-    &Player::startUsingItem,
+    PlayerItemInUse,
+    &PlayerItemInUse::clearItemInUse,
     void,
-    ::ItemStack const& instance,
-    int                duration
+    ::EntityContext& ctx
 ) {
-    if (instance.isPotionItem() || instance.getTypeName() == "minecraft:milk_bucket") {
-        start_using_time[this] = {ll::service::getLevel()->getCurrentServerTick().tickID, duration, instance.clone()};
+    if (getItemInUse().isPotionItem() || getItemInUse().getTypeName() == "minecraft:milk_bucket") {
+        Player* owner = nullptr;
+        ll::service::getLevel()->forEachPlayer([&](Player& player) {
+            if (ctx == player.getEntityContext()) {
+                owner = &player;
+                return false;
+            }
+            return true;
+        });
+        ll::event::EventBus::getInstance().publish(EatEvent{*owner, const_cast<ItemStack&>(getItemInUse())});
     }
-    origin(instance, duration);
-}
-LL_AUTO_TYPE_INSTANCE_HOOK(PlayerStopUsingItem, HookPriority::Normal, Player, &Player::stopUsingItem, void) {
-    if (start_using_time.contains(this)) {
-        auto& [beg, duration, item] = start_using_time[this];
-        if (ll::service::getLevel()->getCurrentServerTick().tickID - beg >= static_cast<uint64>(duration - 6))
-            ll::event::EventBus::getInstance().publish(EatEvent{*this, item});
-        start_using_time.erase(this);
-    }
-    origin();
 }
 void show_text(Player* player) {
     if (!show_thirsts[player->getUuid()]) {
