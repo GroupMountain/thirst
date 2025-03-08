@@ -54,10 +54,10 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/service/Bedrock.h"
 #include "ll/api/service/GamingStatus.h"
 #include "ll/api/thread/ServerThreadExecutor.h"
-#include "mc/legacy/ActorUniqueID.h"
 #include "mc/deps/core/string/HashedString.h"
-#include "mc/deps/core/utility/MCRESULT.h" // IWYU pragma: keep
-#include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
+#include "mc/deps/core/utility/MCRESULT.h"             // IWYU pragma: keep
+#include "mc/deps/ecs/gamerefs_entity/EntityContext.h" // IWYU pragma: keep
+#include "mc/legacy/ActorUniqueID.h"
 #include "mc/nbt/CompoundTag.h" // IWYU pragma: keep
 #include "mc/network/packet/SetTitlePacket.h"
 #include "mc/platform/UUID.h" // IWYU pragma: keep
@@ -72,11 +72,13 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/Minecraft.h"
 #include "mc/world/actor/RenderParams.h"
 #include "mc/world/actor/player/PlayerItemInUse.h"
+#include "mc/world/actor/provider/SynchedActorDataAccess.h"
 #include "mc/world/events/ServerInstanceEventCoordinator.h"
+#include "mc/world/item/BucketItem.h"
 #include "mc/world/item/Item.h"
 #include "mc/world/item/PotionItem.h"
-#include "mc/world/level/ActorEventBroadcaster.h"
-#include "mc/world/level/BlockSource.h" // IWYU pragma: keep
+#include "mc/world/level/ActorEventBroadcaster.h" // IWYU pragma: keep
+#include "mc/world/level/BlockSource.h"           // IWYU pragma: keep
 #include "mc/world/level/Level.h"
 #include "mc/world/level/biome/Biome.h"
 #include "mc/world/level/biome/registry/BiomeRegistry.h"
@@ -85,7 +87,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/level/dimension/Dimension.h"
 #include "mc/world/level/levelgen/WorldGenerator.h"
 #include "mc/world/phys/HitResult.h" // IWYU pragma: keep
-#include "mc/world/item/BucketItem.h"
+
 
 #include <charconv>
 #include <ranges> // IWYU pragma: keep
@@ -110,9 +112,8 @@ void init_molang() {
     ExpressionNode::registerQueryFunction(
         "query.is_biome",
         [&](RenderParams& params, const std::vector<ExpressionNode>& args) -> MolangScriptArg const& {
-            auto biome = params.mActor->getDimension().mWorldGenerator->getBiomeSource().getBiome(
-                params.mActor->getPosition()
-            );
+            auto biome =
+                params.mActor->getDimension().mWorldGenerator->getBiomeSource().getBiome(params.mActor->getPosition());
             static const MolangScriptArg return_true(true), return_false(false);
             for (const auto& arg : args) {
                 const auto& tag = arg.evalGeneric(params);
@@ -132,18 +133,20 @@ void init_molang() {
 }
 
 bool exec_molang(Player* player, const std::string& script) {
-    player->getMolangVariables().setMolangVariable(
+    player->mMolangVariables->setMolangVariable(
         "variable.current_thirst",
         static_cast<float>(current_thirsts[player->getUuid()])
     );
 
     auto res = player->evalMolang(script) != 0.0;
 
-    current_thirsts[player->getUuid()] = static_cast<int>(
-        player->getMolangVariables()
-            .getMolangVariable(HashedString{"variable.current_thirst"}.getHash(), "variable.current_thirst")
-            .mPOD.mFloat
-    );
+    current_thirsts[player->getUuid()] = static_cast<int>(player->mMolangVariables
+                                                              ->_getOrAddMolangVariable(
+                                                                  HashedString{"variable.current_thirst"}.getHash(),
+                                                                  "variable.current_thirst",
+                                                                  true
+                                                              )
+                                                              ->mValue->mPOD.mFloat);
     return res;
 }
 
@@ -151,7 +154,7 @@ void exec_cmds(Player* player, const std::vector<std::string>& cmds) {
     for (const auto& cmd : cmds) {
         CommandContext context =
             CommandContext(cmd, std::make_unique<PlayerCommandOrigin>(*player), CommandVersion::CurrentVersion());
-            ll::service::getMinecraft()->mCommands->executeCommand(context, false);
+        ll::service::getMinecraft()->mCommands->executeCommand(context, false);
     }
 }
 
@@ -206,31 +209,9 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     ll::event::EventBus::getInstance().publish(EatEvent{*this, const_cast<ItemStack&>(instance)});
     origin(instance);
 }
-/*
-LL_AUTO_TYPE_INSTANCE_HOOK(
-    ClearItemInUseHook,
-    HookPriority::Normal,
-    PlayerItemInUse,
-    &PlayerItemInUse::clearItemInUse,
-    void,
-    ::EntityContext& ctx
-) {
-    if (getItemInUse().isPotionItem() || getItemInUse().getTypeName() == "minecraft:milk_bucket") {
-        Player* owner = nullptr;
-        ll::service::getLevel()->forEachPlayer([&](Player& player) {
-            if (ctx == player.getEntityContext()) {
-                owner = &player;
-                return false;
-            }
-            return true;
-        });
-        ll::event::EventBus::getInstance().publish(EatEvent{*owner, const_cast<ItemStack&>(getItemInUse())});
-    }
-}
-*/
 
 // 药水
-LL_TYPE_INSTANCE_HOOK(
+LL_AUTO_TYPE_INSTANCE_HOOK(
     PotionUseHook,
     HookPriority::Normal,
     PotionItem,
@@ -247,11 +228,11 @@ LL_TYPE_INSTANCE_HOOK(
 }
 
 // 牛奶
-LL_TYPE_INSTANCE_HOOK(
+LL_AUTO_TYPE_INSTANCE_HOOK(
     MilkBucketUseHook,
     HookPriority::Normal,
     Item,
-    (uintptr_t)BucketItem::$vftable()[79], 
+    (uintptr_t)BucketItem::$vftable()[79],
     ::ItemUseMethod,
     ::ItemStack& inoutInstance,
     Level*       level,
@@ -262,7 +243,6 @@ LL_TYPE_INSTANCE_HOOK(
     }
     return origin(inoutInstance, level, player);
 }
-
 
 
 void show_text(Player* player) {
@@ -291,6 +271,9 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
 ) {
     init_molang();
     return origin(ins);
+}
+bool isSneaking(Actor* actor) {
+    return SynchedActorDataAccess::getActorFlag(actor->getEntityContext(), ActorFlags::Sneaking);
 }
 void init() {
     data();
@@ -337,7 +320,7 @@ void init() {
         if (event.item().getItem()->isFood() || event.item().isPotionItem()
             || event.item().getTypeName() == "minecraft:milk_bucket")
             return;
-        if (!event.self().isSneaking()) return;
+        if (!isSneaking(&event.self())) return;
         mod::Mod::getInstance().getSelf().getLogger().info(event.item().getTypeName());
         if (auto hitResult = event.self().traceRay(5.5f, false, true); hitResult.mIsHitLiquid) {
             auto& block = event.self().getDimensionBlockSource().getBlock(hitResult.mLiquid);
@@ -399,7 +382,7 @@ void init() {
         if (current_thirsts[event.self().getUuid()] < thirst_min) current_thirsts[event.self().getUuid()] = thirst_min;
     });
     ll::event::EventBus::getInstance().emplaceListener<ll::event::PlayerInteractBlockEvent>([](auto& event) {
-        if (!event.self().isSneaking()) return;
+        if (!isSneaking(&event.self())) return;
         static phmap::flat_hash_map<ActorUniqueID, std::chrono::time_point<std::chrono::steady_clock>>
             last_trigger_times;
         using namespace std::literals;
@@ -456,18 +439,16 @@ __declspec(dllexport) int get_thirst(const std::string& uuid) {
     if (data().contains(uuid)) return data()[uuid].get<int>();
     return -1;
 }
-__declspec(dllexport) bool set_thirst(const std::string& uuid, int value) {
+__declspec(dllexport) void set_thirst(const std::string& uuid, int value) {
     if (value < thirst_min) {
-        value = thirst_min; 
+        value = thirst_min;
     } else if (value > thirst_max) {
-        value = thirst_max; 
+        value = thirst_max;
     }
-
     if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) {
         current_thirsts[key] = value;
         show_text(ll::service::getLevel()->getPlayer(key));
     } else data()[uuid] = value;
-    return true;
 }
 __declspec(dllexport) void set_show_thirst(const std::string& uuid, bool value) {
     show_thirsts[mce::UUID::fromString(uuid)] = value;
