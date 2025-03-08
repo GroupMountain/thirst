@@ -54,7 +54,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "ll/api/service/Bedrock.h"
 #include "ll/api/service/GamingStatus.h"
 #include "ll/api/thread/ServerThreadExecutor.h"
-#include "mc/common/ActorUniqueID.h"
+#include "mc/legacy/ActorUniqueID.h"
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/deps/core/utility/MCRESULT.h" // IWYU pragma: keep
 #include "mc/deps/ecs/gamerefs_entity/EntityContext.h"
@@ -85,7 +85,7 @@ LL_REGISTER_MOD(mod::Mod, mod::Mod::getInstance());
 #include "mc/world/level/dimension/Dimension.h"
 #include "mc/world/level/levelgen/WorldGenerator.h"
 #include "mc/world/phys/HitResult.h" // IWYU pragma: keep
-
+#include "mc/world/item/BucketItem.h"
 
 #include <charconv>
 #include <ranges> // IWYU pragma: keep
@@ -110,7 +110,7 @@ void init_molang() {
     ExpressionNode::registerQueryFunction(
         "query.is_biome",
         [&](RenderParams& params, const std::vector<ExpressionNode>& args) -> MolangScriptArg const& {
-            auto biome = params.mActor->getDimension().getWorldGenerator()->getBiomeSource().getBiome(
+            auto biome = params.mActor->getDimension().mWorldGenerator->getBiomeSource().getBiome(
                 params.mActor->getPosition()
             );
             static const MolangScriptArg return_true(true), return_false(false);
@@ -151,7 +151,7 @@ void exec_cmds(Player* player, const std::vector<std::string>& cmds) {
     for (const auto& cmd : cmds) {
         CommandContext context =
             CommandContext(cmd, std::make_unique<PlayerCommandOrigin>(*player), CommandVersion::CurrentVersion());
-        ll::service::getMinecraft()->getCommands().executeCommand(context, false);
+            ll::service::getMinecraft()->mCommands->executeCommand(context, false);
     }
 }
 
@@ -206,6 +206,7 @@ LL_AUTO_TYPE_INSTANCE_HOOK(PlayerEatHook, HookPriority::Normal, Player, &Player:
     ll::event::EventBus::getInstance().publish(EatEvent{*this, const_cast<ItemStack&>(instance)});
     origin(instance);
 }
+/*
 LL_AUTO_TYPE_INSTANCE_HOOK(
     ClearItemInUseHook,
     HookPriority::Normal,
@@ -226,6 +227,44 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
         ll::event::EventBus::getInstance().publish(EatEvent{*owner, const_cast<ItemStack&>(getItemInUse())});
     }
 }
+*/
+
+// 药水
+LL_TYPE_INSTANCE_HOOK(
+    PotionUseHook,
+    HookPriority::Normal,
+    PotionItem,
+    &PotionItem::$useTimeDepleted,
+    ::ItemUseMethod,
+    ::ItemStack& inoutInstance,
+    Level*       level,
+    Player*      player
+) {
+    if (player) {
+        ll::event::EventBus::getInstance().publish(EatEvent{*player, inoutInstance});
+    }
+    return origin(inoutInstance, level, player);
+}
+
+// 牛奶
+LL_TYPE_INSTANCE_HOOK(
+    MilkBucketUseHook,
+    HookPriority::Normal,
+    Item,
+    (uintptr_t)BucketItem::$vftable()[79], 
+    ::ItemUseMethod,
+    ::ItemStack& inoutInstance,
+    Level*       level,
+    Player*      player
+) {
+    if (player && inoutInstance.getTypeName() == "minecraft:milk_bucket") {
+        ll::event::EventBus::getInstance().publish(EatEvent{*player, inoutInstance});
+    }
+    return origin(inoutInstance, level, player);
+}
+
+
+
 void show_text(Player* player) {
     if (!show_thirsts[player->getUuid()]) {
         SetTitlePacket packet{SetTitlePacket::TitleType::Actionbar, "", std::nullopt};
@@ -246,7 +285,7 @@ LL_AUTO_TYPE_INSTANCE_HOOK(
     ServerStartHook,
     HookPriority::Normal,
     ServerInstanceEventCoordinator,
-    &ServerInstanceEventCoordinator::sendServerThreadStarted,
+    &ServerInstanceEventCoordinator::sendServerInitializeEnd,
     void,
     ::ServerInstance& ins
 ) {
@@ -419,9 +458,9 @@ __declspec(dllexport) int get_thirst(const std::string& uuid) {
 }
 __declspec(dllexport) bool set_thirst(const std::string& uuid, int value) {
     if (value < thirst_min) {
-        value = thirst_min; // 直接设置为最小值
+        value = thirst_min; 
     } else if (value > thirst_max) {
-        value = thirst_max; // 直接设置为最大值
+        value = thirst_max; 
     }
 
     if (auto key = mce::UUID::fromString(uuid); current_thirsts.contains(key)) {
