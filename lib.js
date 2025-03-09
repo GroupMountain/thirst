@@ -26,7 +26,7 @@ function getThirst(uuid) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {Boolean}
+ * @returns {void}
  */
 function setThirst(uuid, value) {
   return thirst_api.setThirst(uuid, value);
@@ -34,7 +34,7 @@ function setThirst(uuid, value) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {Boolean}
+ * @returns {void}
  */
 function addThirst(uuid, value) {
   return setThirst(uuid, getThirst(uuid) + value);
@@ -42,7 +42,7 @@ function addThirst(uuid, value) {
 /**
  * @param {string} uuid
  * @param {number} value
- * @returns {Boolean}
+ * @returns {void}
  */
 function reduceThirst(uuid, value) {
   return setThirst(uuid, getThirst(uuid) - value);
