@@ -3,7 +3,7 @@
   "entry": "${modFile}",
   "version": "${modVersion}",
   "type": "native",
-  "dependencies": [
+  "optionalDependencies": [
     {
       "name": "thirst"
     }
